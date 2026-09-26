@@ -1,6 +1,8 @@
 Per-layer schema validation before merge (#5110 Slice 3).
 
-Overlay and inline configuration layers are now validated against their Pydantic
-schemas before they are merged into the effective configuration. Invalid values
-raise `LayerValidationError` naming the offending layer and source path, so
-operators see which layer introduced the bad value.
+Configuration layers across both run-overlay merging and the resolution cascade
+(session environment variables, project config, context, and global settings)
+are now validated against dedicated section schemas and top-level Field constraints
+before they are merged. Invalid values raise `LayerValidationError` naming the
+offending layer and source path, so operators see which layer introduced the bad value.
+

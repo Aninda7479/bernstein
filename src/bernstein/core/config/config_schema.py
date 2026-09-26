@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -925,6 +925,10 @@ class BernsteinConfig(BaseModel):
         description="CLI agent backend.",
     )
     max_agents: int = Field(default=6, ge=1, description="Maximum concurrent agents.")
+    effort: Literal["max", "medium", "low"] | None = Field(
+        default=None,
+        description="Default effort level for reasoning models.",
+    )
     model: str | None = Field(default=None, description="Model override.")
     team: Literal["auto"] | list[str] = Field(default="auto", description="Role team selection.")
     budget: str | int | float | None = Field(default=None, description='Spending cap ("$20", 20, or 20.0).')
@@ -1501,6 +1505,21 @@ class LayerValidationError(ValueError):
         )
 
 
+_FIELD_VALIDATOR_MODELS: dict[str, type[BaseModel]] = {}
+
+
+def _get_field_validator_model(key: str) -> type[BaseModel]:
+    """Return a single-field Pydantic model for validating *key* with its Field constraints."""
+    if key not in _FIELD_VALIDATOR_MODELS:
+        field_info = BernsteinConfig.model_fields[key]
+        field_def: Any = (field_info.annotation, field_info)
+        _FIELD_VALIDATOR_MODELS[key] = create_model(
+            f"FieldValidator_{key}",
+            **{key: field_def},
+        )
+    return _FIELD_VALIDATOR_MODELS[key]
+
+
 def validate_layer_partial(
     data: Mapping[str, Any],
     *,
@@ -1510,7 +1529,7 @@ def validate_layer_partial(
     """Validate a partial configuration layer before it is merged into the effective config.
 
     Validates any sections present against their dedicated Pydantic schemas,
-    and any recognized top-level fields against BernsteinConfig field types.
+    and any recognized top-level fields against BernsteinConfig field types and constraints.
 
     Args:
         data: Partial dictionary from the configuration layer.
@@ -1538,14 +1557,14 @@ def validate_layer_partial(
             elif value is not None:
                 errors.append(f"{key}: expected a mapping/dictionary, got {type(value).__name__}")
         elif key in BernsteinConfig.model_fields:
-            field_info = BernsteinConfig.model_fields[key]
+            validator_model = _get_field_validator_model(key)
             try:
-                TypeAdapter(field_info.annotation).validate_python(value)
+                validator_model.model_validate({key: value})
             except ValidationError as exc:
                 for issue in exc.errors():
                     loc = ".".join(str(p) for p in issue["loc"])
-                    loc_suffix = f".{loc}" if loc else ""
-                    errors.append(f"{key}{loc_suffix}: {issue['msg']}")
+                    field_desc = loc if loc else key
+                    errors.append(f"{field_desc}: {issue['msg']}")
 
     if errors:
         raise LayerValidationError(layer_name=layer_name, path=str_path, errors=errors)

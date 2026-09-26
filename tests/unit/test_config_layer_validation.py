@@ -11,6 +11,7 @@ from bernstein.core.config.config_schema import (
     LayerValidationError,
     validate_layer_partial,
 )
+from bernstein.core.config.home import BernsteinHome, resolve_config
 from bernstein.core.config.run_overlay import resolve_effective_mapping
 from bernstein.core.config.seed_config import SeedError
 from bernstein.core.config.seed_parser import parse_seed
@@ -148,3 +149,58 @@ def test_parse_seed_surfaces_layer_validation_error(project: Path, monkeypatch: 
     assert "run-overlay" in err_msg
     assert str(overlay_path) in err_msg
     assert "quality_gates.enabled" in err_msg
+
+
+# -- home.py layer validation tests --
+
+
+def test_validate_layer_partial_field_aware_constraints() -> None:
+    """Field(...) constraints like ge=1 on max_agents are enforced by the model validator."""
+    with pytest.raises(LayerValidationError) as exc_info:
+        validate_layer_partial({"max_agents": -1}, layer_name="test")
+    assert "greater than or equal to 1" in str(exc_info.value)
+
+    with pytest.raises(LayerValidationError) as exc_info:
+        validate_layer_partial({"cli": "unsupported_cli"}, layer_name="test")
+    assert "claude" in str(exc_info.value)
+
+
+def test_invalid_session_env_var_reported_with_session_layer_name(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed env-var overlay value surfaces as a session-layer error with source path (#5110)."""
+    monkeypatch.setenv("BERNSTEIN_MAX_AGENTS", "nope")
+
+    with pytest.raises(LayerValidationError) as exc_info:
+        resolve_config("max_agents", home=BernsteinHome.default(), project_dir=project)
+
+    err = str(exc_info.value)
+    assert exc_info.value.layer_name == "session"
+    assert "$BERNSTEIN_MAX_AGENTS" in err
+    assert "max_agents" in err
+
+
+def test_invalid_session_env_var_field_constraint_rejected(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An out-of-bounds env-var value fails Field(...) constraints during session resolution."""
+    monkeypatch.setenv("BERNSTEIN_MAX_AGENTS", "-1")
+
+    with pytest.raises(LayerValidationError) as exc_info:
+        resolve_config("max_agents", home=BernsteinHome.default(), project_dir=project)
+
+    err = str(exc_info.value)
+    assert exc_info.value.layer_name == "session"
+    assert "$BERNSTEIN_MAX_AGENTS" in err
+    assert "greater than or equal to 1" in err
+
+
+def test_invalid_project_layer_reported_with_project_layer_name(project: Path) -> None:
+    """An invalid setting in .sdd/config.yaml fails with project layer name and path."""
+    (project / ".sdd" / "config.yaml").write_text("max_agents: -5\n", encoding="utf-8")
+
+    with pytest.raises(LayerValidationError) as exc_info:
+        resolve_config("max_agents", home=BernsteinHome.default(), project_dir=project)
+
+    err = str(exc_info.value)
+    assert exc_info.value.layer_name == "project"
+    assert ".sdd" in err
+    assert "greater than or equal to 1" in err
