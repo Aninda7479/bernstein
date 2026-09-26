@@ -23,13 +23,10 @@ if TYPE_CHECKING:
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     """A minimal project with git structure and .sdd/config.yaml."""
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir(parents=True)
-    sdd = tmp_path / ".sdd"
-    sdd.mkdir(parents=True)
-    (sdd / "config.yaml").write_text("cli: codex\nmax_agents: 3\n", encoding="utf-8")
-    seed_file = tmp_path / "bernstein.yaml"
-    seed_file.write_text("goal: Test goal\n", encoding="utf-8")
+    (tmp_path / ".git").mkdir(parents=True)
+    (tmp_path / ".sdd").mkdir(parents=True)
+    (tmp_path / ".sdd" / "config.yaml").write_text("cli: codex\nmax_agents: 3\n", encoding="utf-8")
+    (tmp_path / "bernstein.yaml").write_text("goal: Test goal\n", encoding="utf-8")
     return tmp_path
 
 
@@ -37,16 +34,8 @@ def project(tmp_path: Path) -> Path:
 def _isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Isolate tests from real ~/.bernstein and leaked environment variables."""
     monkeypatch.setenv("BERNSTEIN_HOME", str(tmp_path / "home"))
-    for leaked in (
-        "BERNSTEIN_CLI",
-        "BERNSTEIN_EFFORT",
-        "BERNSTEIN_MAX_AGENTS",
-        "BERNSTEIN_MODEL",
-        "BERNSTEIN_BUDGET",
-        "BERNSTEIN_CONFIG_OVERLAY",
-        "BERNSTEIN_CONFIG_OVERRIDE",
-    ):
-        monkeypatch.delenv(leaked, raising=False)
+    for k in ("CLI", "EFFORT", "MAX_AGENTS", "MODEL", "BUDGET", "CONFIG_OVERLAY", "CONFIG_OVERRIDE"):
+        monkeypatch.delenv(f"BERNSTEIN_{k}", raising=False)
     yield
 
 
