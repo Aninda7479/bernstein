@@ -179,7 +179,10 @@ range, unrecognised enum variant — raises `LayerValidationError` naming the
 offending layer and source path, so the operator sees *which* layer introduced
 the bad value rather than getting a generic post-merge error. Missing fields
 are allowed because partial overlays are expected to supply only the keys they
-override; the base config supplies the rest.
+override; the base config supplies the rest. Cross-field validation
+(`_validate_cross_fields`, e.g. budget sign) is not enforced by layer validation;
+fields whose constraints live only in cross-field checks are caught later or not
+at all on this path.
 
 Two consequences worth knowing:
 

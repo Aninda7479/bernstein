@@ -485,14 +485,9 @@ def resolve_config(
     global_data = home.load_raw()
     combined_session_overrides = _session_overrides_from_env() | dict(session_overrides or {})
 
-    if validate_layers:
-        from bernstein.core.config.config_schema import validate_layer_partial
-
     layers: list[ConfigProvenanceLayer] = []
     if seed_overrides is not None and key in seed_overrides:
         value = _coerce_config_value(key, seed_overrides[key])
-        if validate_layers:
-            validate_layer_partial({key: value}, layer_name="seed", path=seed_overrides_path)
         layers.append(
             {
                 "source": "seed",
@@ -503,55 +498,44 @@ def resolve_config(
         )
     if key in combined_session_overrides:
         value = _coerce_config_value(key, combined_session_overrides[key])
-        if validate_layers:
-            env_var = _ENV_OVERRIDE_MAP.get(key)
-            env_path = f"${env_var}" if env_var and os.environ.get(env_var) is not None else None
-            validate_layer_partial({key: value}, layer_name="session", path=env_path)
+        env_var = _ENV_OVERRIDE_MAP.get(key)
+        env_path = f"${env_var}" if env_var and os.environ.get(env_var) is not None else None
         layers.append(
             {
                 "source": "session",
                 "value": value,
                 "redacted_value": _redact_config_value(key, value),
-                "path": None,
+                "path": env_path,
             }
         )
     if key in project_config:
         value = project_config[key]
-        proj_path = str(project_dir / ".sdd" / _CONFIG_YAML_FILENAME)
-        if validate_layers:
-            validate_layer_partial({key: value}, layer_name="project", path=proj_path)
         layers.append(
             {
                 "source": "project",
                 "value": value,
                 "redacted_value": _redact_config_value(key, value),
-                "path": proj_path,
+                "path": str(project_dir / ".sdd" / _CONFIG_YAML_FILENAME),
             }
         )
     if key in context_config:
         value = context_config[key]
-        ctx_path = str(project_dir / ".sdd" / _CONTEXT_DIR[0] / _CONTEXT_DIR[1] / f"{context_name}.json")
-        if validate_layers:
-            validate_layer_partial({key: value}, layer_name="context", path=ctx_path)
         layers.append(
             {
                 "source": "context",
                 "value": value,
                 "redacted_value": _redact_config_value(key, value),
-                "path": ctx_path,
+                "path": str(project_dir / ".sdd" / _CONTEXT_DIR[0] / _CONTEXT_DIR[1] / f"{context_name}.json"),
             }
         )
     if key in global_data:
         value = global_data[key]
-        glob_path = str(home.path / _CONFIG_YAML_FILENAME)
-        if validate_layers:
-            validate_layer_partial({key: value}, layer_name="global", path=glob_path)
         layers.append(
             {
                 "source": "global",
                 "value": value,
                 "redacted_value": _redact_config_value(key, value),
-                "path": glob_path,
+                "path": str(home.path / _CONFIG_YAML_FILENAME),
             }
         )
 
@@ -566,6 +550,11 @@ def resolve_config(
     )
 
     winning = layers[0]
+    if validate_layers and winning["source"] != "default":
+        from bernstein.core.config.config_schema import validate_layer_partial
+
+        validate_layer_partial({key: winning["value"]}, layer_name=winning["source"], path=winning["path"])
+
     return {
         "value": winning["value"],
         "source": winning["source"],

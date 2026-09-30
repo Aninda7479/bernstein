@@ -203,6 +203,16 @@ def config_set(key: str, value: str) -> None:
     console.print(f"[green]✓[/green] {key} = {parsed_value!r}  [dim](~/.bernstein/config.yaml)[/dim]")
 
 
+def _safe_resolve(func: Any, *args: Any, **kwargs: Any) -> Any:
+    """Call a config resolution function and convert LayerValidationError to ClickException (#5110)."""
+    from bernstein.core.config.config_schema import LayerValidationError
+
+    try:
+        return func(*args, **kwargs)
+    except LayerValidationError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @config_group.command("get")
 @click.argument("key")
 @click.option("--project-dir", default=".", show_default=True, help="Project directory for precedence check.")
@@ -214,7 +224,7 @@ def config_get(key: str, project_dir: str) -> None:
     from bernstein.core.home import BernsteinHome, resolve_config
 
     home = BernsteinHome.default()
-    result = resolve_config(key, home=home, project_dir=Path(project_dir))
+    result = _safe_resolve(resolve_config, key, home=home, project_dir=Path(project_dir))
     source_style = {"project": "cyan", "global": "yellow", "default": "dim"}.get(result["source"], "white")
     console.print(
         f"[bold]{key}[/bold] = {result['value']!r}  [{source_style}](source: {result['source']})[/{source_style}]"
@@ -241,7 +251,7 @@ def config_list(project_dir: str) -> None:
     source_styles = {"project": "cyan", "global": "yellow", "default": "dim"}
 
     for key in sorted(_DEFAULTS.keys()):
-        result = resolve_config(key, home=home, project_dir=Path(project_dir))
+        result = _safe_resolve(resolve_config, key, home=home, project_dir=Path(project_dir))
         style = source_styles.get(result["source"], "white")
         table.add_row(
             key,
@@ -288,7 +298,7 @@ def config_explain(key: str | None, project_dir: str, as_json: bool) -> None:
 
     rows: list[dict[str, Any]] = []
     for name in keys:
-        result = resolve_config(name, home=home, project_dir=Path(project_dir))
+        result = _safe_resolve(resolve_config, name, home=home, project_dir=Path(project_dir))
         # The redacted value is what gets printed. A resolution report is
         # exactly the output an operator pastes into an issue, so a secret
         # resolved from any layer must not be the thing that leaks.
@@ -451,7 +461,7 @@ def config_conflicts(project_dir: str) -> None:
     from bernstein.core.home import BernsteinHome, check_source_policies, explain_conflicts, resolve_config_bundle
 
     home = BernsteinHome.default()
-    bundle = resolve_config_bundle(home=home, project_dir=Path(project_dir))
+    bundle = _safe_resolve(resolve_config_bundle, home=home, project_dir=Path(project_dir))
     conflicts = explain_conflicts(bundle)
     violations = check_source_policies(bundle)
 

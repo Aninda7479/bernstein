@@ -1530,6 +1530,9 @@ def validate_layer_partial(
 
     Validates any sections present against their dedicated Pydantic schemas,
     and any recognized top-level fields against BernsteinConfig field types and constraints.
+    Cross-field validation (_validate_cross_fields, e.g. budget sign) is not enforced by
+    layer validation; fields whose constraints live only in cross-field checks are caught
+    later or not at all on this path.
 
     Args:
         data: Partial dictionary from the configuration layer.
